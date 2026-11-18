@@ -26,17 +26,26 @@ use std::path::Path;
 
 /// The 15 band centre frequencies used by the upstream equalizer.
 ///
-/// The first band is a low shelf and the last one a high shelf; the 13 in
-/// between are peaking filters.
+/// These are the exact values the `mbeq_1197` plugin uses (from its `bands[]`
+/// table), not the rounded ones its control ports are labelled with. The
+/// upstream preset files store the rounded names, so both are kept here.
 pub const BAND_FREQUENCIES: [f64; 15] = [
-    50.0, 100.0, 156.0, 220.0, 311.0, 440.0, 622.0, 880.0, 1250.0, 1750.0, 2500.0, 3500.0, 5000.0,
-    10000.0, 20000.0,
+    50.0, 100.0, 155.56, 220.0, 311.13, 440.0, 622.25, 880.0, 1244.51, 1760.0, 2489.02, 3519.95,
+    4978.04, 9956.08, 19912.16,
+];
+
+/// The band frequencies as the upstream preset files and control port labels
+/// spell them, rounded to whole numbers.
+pub const BAND_FREQUENCY_LABELS: [u32; 15] = [
+    50, 100, 156, 220, 311, 440, 622, 880, 1250, 1750, 2500, 3500, 5000, 10000, 20000,
 ];
 
 /// Number of bands in a preset.
 pub const NUM_BANDS: usize = BAND_FREQUENCIES.len();
 
 /// Minimum gain a band can be set to, in dB.
+///
+/// The upstream GUI used -30..+30; the LADSPA plugin itself accepts -70..+30.
 pub const GAIN_MIN: f32 = -30.0;
 
 /// Maximum gain a band can be set to, in dB.
@@ -174,7 +183,9 @@ pub fn parse_legacy_preset(text: &str) -> Result<Preset, PresetError> {
     }
 
     // The upstream format lists the band frequencies; they must match the ones
-    // we implement, otherwise the curve would mean something different.
+    // we implement, otherwise the curve would mean something different. The
+    // upstream files store rounded values (156 Hz where the plugin uses
+    // 155.56 Hz), so the comparison is done against the rounded labels.
     for i in 0..num_bands {
         let freq: f64 = lines[6 + num_bands + i]
             .trim()
@@ -182,10 +193,10 @@ pub fn parse_legacy_preset(text: &str) -> Result<Preset, PresetError> {
             .map_err(|_| {
                 PresetError::Format(format!("bad frequency value {:?}", lines[6 + num_bands + i]))
             })?;
-        if (freq - BAND_FREQUENCIES[i]).abs() > 0.5 {
+        let expected = BAND_FREQUENCY_LABELS[i] as f64;
+        if (freq - expected).abs() > 1.0 {
             return Err(PresetError::Format(format!(
-                "band {i} is at {freq} Hz, expected {} Hz",
-                BAND_FREQUENCIES[i]
+                "band {i} is at {freq} Hz, expected {expected} Hz"
             )));
         }
     }

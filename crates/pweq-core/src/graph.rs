@@ -25,10 +25,20 @@ pub const NODE_BAND_HIGH: &str = "band_high";
 /// Middle bands, peaking filters.
 pub const NODE_BAND_PEAKING: &str = "band_peaking";
 
-/// Q factor used for the shelving filters.
-pub const SHELF_Q: f64 = 0.707;
-/// Q factor used for the peaking filters.
-pub const PEAK_Q: f64 = 1.0;
+/// Q factor of the low shelf (50 Hz).
+pub const Q_LOW_SHELF: f64 = 0.55;
+/// Q factor of the high shelf (19912.16 Hz).
+pub const Q_HIGH_SHELF: f64 = 0.25;
+/// Q factor of the peaking filters, per band.
+///
+/// The upstream `mbeq_1197` plugin is not a biquad equalizer: it works in the
+/// frequency domain (1024 point FFT, raised cosine window, 75% overlap) and
+/// interpolates the gain linearly between band centres. A cascade of biquads
+/// cannot reproduce that curve exactly, so these Q values are the ones that
+/// fit the original curve most closely, band by band.
+pub const Q_PEAKING: [f64; 15] = [
+    1.93, 2.67, 2.92, 2.92, 2.92, 2.92, 2.92, 2.92, 2.87, 2.87, 2.82, 1.38, 0.74, 0.55, 0.25,
+];
 
 /// The label of the biquad kind for a given band index.
 ///
@@ -38,6 +48,15 @@ pub fn band_label(index: usize) -> &'static str {
         0 => "bq_lowshelf",
         LAST_BAND => "bq_highshelf",
         _ => "bq_peaking",
+    }
+}
+
+/// The Q factor of a given band.
+pub fn band_q(index: usize) -> f64 {
+    match index {
+        0 => Q_LOW_SHELF,
+        LAST_BAND => Q_HIGH_SHELF,
+        _ => Q_PEAKING[index],
     }
 }
 
@@ -94,10 +113,7 @@ impl FilterGraph {
                 name: band_node(i),
                 label: band_label(i),
                 freq,
-                q: match i {
-                    0 | LAST_BAND => SHELF_Q,
-                    _ => PEAK_Q,
-                },
+                q: band_q(i),
                 gain: f64::from(state.gains_db[i]),
             })
             .collect();

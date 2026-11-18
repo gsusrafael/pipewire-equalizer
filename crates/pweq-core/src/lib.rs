@@ -12,12 +12,12 @@ pub mod protocol;
 pub mod store;
 
 pub use graph::{
-    band_label, band_node, FilterGraph, GraphNode, PreampNode, NODE_BAND_HIGH, NODE_BAND_LOW,
-    NODE_BAND_PEAKING, NODE_PREAMP, PEAK_Q, SHELF_Q,
+    band_label, band_node, band_q, FilterGraph, GraphNode, PreampNode, NODE_BAND_HIGH,
+    NODE_BAND_LOW, NODE_BAND_PEAKING, NODE_PREAMP, Q_HIGH_SHELF, Q_LOW_SHELF, Q_PEAKING,
 };
 pub use preset::{
-    db_to_linear, linear_to_db, parse_legacy_preset, read_legacy_preset, BAND_FREQUENCIES, EqState,
-    GAIN_MAX, GAIN_MIN, NUM_BANDS, Preset, PresetError,
+    db_to_linear, linear_to_db, parse_legacy_preset, read_legacy_preset, BAND_FREQUENCIES,
+    BAND_FREQUENCY_LABELS, EqState, GAIN_MAX, GAIN_MIN, NUM_BANDS, Preset, PresetError,
 };
 pub use protocol::{
     decode_request, decode_response, encode_request, encode_response, Request, Response, State,

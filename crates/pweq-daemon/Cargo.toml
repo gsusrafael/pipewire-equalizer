@@ -9,3 +9,8 @@ description = "PipeWire equalizer daemon"
 
 [dependencies]
 pweq-core = { workspace = true }
+pipewire = "0.10"
+libspa = "0.10"
+
+[build-dependencies]
+pkg-config = "0.3"
