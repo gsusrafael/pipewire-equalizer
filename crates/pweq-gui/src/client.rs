@@ -58,16 +58,6 @@ impl Client {
         }
     }
 
-    /// Create a client for a specific socket.
-    pub fn with_path(path: impl Into<PathBuf>) -> Self {
-        Self { path: path.into() }
-    }
-
-    /// The path of the socket.
-    pub fn path(&self) -> &PathBuf {
-        &self.path
-    }
-
     /// Send a request and wait for the answer.
     pub fn send(&self, request: &Request) -> Result<Response, ClientError> {
         let mut stream = UnixStream::connect(&self.path)?;

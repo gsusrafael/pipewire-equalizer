@@ -26,18 +26,25 @@ pub const NODE_BAND_HIGH: &str = "band_high";
 pub const NODE_BAND_PEAKING: &str = "band_peaking";
 
 /// Q factor of the low shelf (50 Hz).
-pub const Q_LOW_SHELF: f64 = 0.55;
+///
+/// The shelving filters of PipeWire have a fixed slope, so their Q is fixed
+/// as well and this value has no effect on them; it is kept for symmetry.
+pub const Q_LOW_SHELF: f64 = 0.71;
 /// Q factor of the high shelf (19912.16 Hz).
-pub const Q_HIGH_SHELF: f64 = 0.25;
+pub const Q_HIGH_SHELF: f64 = 0.71;
 /// Q factor of the peaking filters, per band.
 ///
 /// The upstream `mbeq_1197` plugin is not a biquad equalizer: it works in the
 /// frequency domain (1024 point FFT, raised cosine window, 75% overlap) and
 /// interpolates the gain linearly between band centres. A cascade of biquads
-/// cannot reproduce that curve exactly, so these Q values are the ones that
-/// fit the original curve most closely, band by band.
+/// adds up the response of every filter instead, so the curve is not the same.
+///
+/// These Q values were fitted (with `tools/compare_response.py`) to make the
+/// cascade as close as possible to the curve of the original plugin: the
+/// root mean square error over 20 Hz - 20 kHz goes from 2.86 dB with a flat
+/// Q of 2.9 to 1.18 dB with these values.
 pub const Q_PEAKING: [f64; 15] = [
-    1.93, 2.67, 2.92, 2.92, 2.92, 2.92, 2.92, 2.92, 2.87, 2.87, 2.82, 1.38, 0.74, 0.55, 0.25,
+    0.30, 2.55, 2.80, 3.30, 4.40, 4.05, 3.50, 5.65, 4.50, 2.10, 7.35, 4.10, 0.75, 0.55, 0.25,
 ];
 
 /// The label of the biquad kind for a given band index.

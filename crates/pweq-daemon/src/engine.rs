@@ -122,7 +122,19 @@ impl EqEngine {
     /// The module is loaded in the client context; it then registers its
     /// streams in the running daemon, so the node is visible to every client
     /// and can be routed like any other sink.
-    pub fn create_node(&self, graph: &FilterGraph) -> Result<(), EqError> {
+    pub fn create_node(
+        &self,
+        graph: &FilterGraph,
+        target: Option<&str>,
+    ) -> Result<(), EqError> {
+        // The playback side plays into the real output. Without a target it
+        // would follow whatever WirePlumber considers the default, which can
+        // be this very sink, so the target is always given.
+        let target_props = match target {
+            Some(name) => format!("target.object = \"{name}\" "),
+            None => String::new(),
+        };
+
         let args = format!(
             "node.description = \"PipeWire Equalizer\" \
              media.name = \"PipeWire Equalizer\" \
@@ -130,7 +142,7 @@ impl EqEngine {
              audio.channels = 2 \
              audio.position = [ FL FR ] \
              capture.props = {{ node.name = \"{EQ_SINK_NAME}\" media.class = Audio/Sink priority.session = 0 }} \
-             playback.props = {{ node.name = \"{EQ_OUTPUT_NAME}\" node.passive = true }}",
+             playback.props = {{ node.name = \"{EQ_OUTPUT_NAME}\" node.passive = true node.dont-move = true {target_props} }}",
             graph.to_spa_json()
         );
 
@@ -159,6 +171,7 @@ impl EqEngine {
     }
 
     /// Destroy the equalizer node.
+    #[allow(dead_code)]
     pub fn destroy_node(&self) {
         if let Some(module) = self.module.borrow_mut().take() {
             unsafe {

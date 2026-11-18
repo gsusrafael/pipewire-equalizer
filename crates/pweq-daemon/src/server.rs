@@ -44,12 +44,6 @@ impl Server {
         })
     }
 
-    /// The raw file descriptor, to watch it in the PipeWire loop.
-    pub fn fd(&self) -> std::os::unix::io::RawFd {
-        use std::os::unix::io::AsRawFd;
-        self.listener.as_raw_fd()
-    }
-
     /// Accept new clients and read what is pending.
     ///
     /// Returns the requests that arrived, in order.

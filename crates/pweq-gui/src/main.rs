@@ -26,9 +26,6 @@ struct Sliders {
     preamp: gtk4::Scale,
 }
 
-/// Whether the interface is updating the sliders itself.
-struct Updating(Rc<RefCell<bool>>);
-
 fn main() -> glib::ExitCode {
     let application = gtk4::Application::builder()
         .application_id(APP_ID)
@@ -228,7 +225,6 @@ fn build_window(app: &gtk4::Application) {
         let updating = updating.clone();
         let sliders = sliders.clone();
         let show_error = show_error.clone();
-        let preset_model = preset_model.clone();
 
         preset_choices.connect_selected_notify(move |combo| {
             if *updating.borrow() {
@@ -279,7 +275,7 @@ fn build_window(app: &gtk4::Application) {
         let client = client.clone();
         let preset_model = preset_model.clone();
         let show_error = show_error.clone();
-        let updating = updating.clone();
+        let _ = &preset_model;
 
         refresh.connect_clicked(move |_| {
             match client.get_state() {
@@ -289,7 +285,6 @@ fn build_window(app: &gtk4::Application) {
                 }
                 Err(e) => show_error(&e.to_string()),
             }
-            let _ = &updating;
         });
     }
 

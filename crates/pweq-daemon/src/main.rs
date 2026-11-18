@@ -125,8 +125,12 @@ fn main() {
         }
     };
 
+    // The equalizer plays into the current default output, unless the
+    // environment says otherwise.
+    let target = std::env::var("PWEQ_TARGET").ok();
+
     let graph = FilterGraph::build(&session.state);
-    if let Err(e) = engine.create_node(&graph) {
+    if let Err(e) = engine.create_node(&graph, target.as_deref()) {
         eprintln!("pweq-daemon: cannot create the equalizer node: {e}");
         std::process::exit(1);
     }
