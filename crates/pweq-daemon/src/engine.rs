@@ -27,6 +27,7 @@ use pipewire::registry::RegistryRc;
 use pipewire::spa::param::ParamType;
 use pipewire::spa::pod::Pod;
 use pipewire::spa::utils::SpaTypes;
+use pipewire::node::NodeState;
 use pipewire::types::ObjectType;
 
 use std::cell::RefCell;
@@ -85,6 +86,8 @@ pub struct EqEngine {
     node_id: RefCell<Option<u32>>,
     /// Handle of the loaded module, kept alive while the node must exist.
     module: RefCell<Option<*mut pipewire::sys::pw_impl_module>>,
+    /// The state of the equalizer node, as the daemon reports it.
+    state: RefCell<NodeState<'static>>,
 }
 
 impl EqEngine {
@@ -104,12 +107,47 @@ impl EqEngine {
             node: RefCell::new(None),
             node_id: RefCell::new(None),
             module: RefCell::new(None),
+            state: RefCell::new(NodeState::Suspended),
         })
     }
 
     /// The PipeWire main loop, to be run by the caller.
     pub fn main_loop(&self) -> &MainLoopRc {
         &self.main_loop
+    }
+
+    /// The PipeWire core, to reach the metadata and the registry.
+    pub fn core(&self) -> &CoreRc {
+        &self.core
+    }
+
+    /// Run the PipeWire loop until the condition holds, or the attempts run
+    /// out.
+    ///
+    /// The registry delivers the globals that already exist through the
+    /// main loop, so waiting for one means running it.
+    pub fn wait_for(&self, mut condition: impl FnMut() -> bool) {
+        for _ in 0..100 {
+            if condition() {
+                return;
+            }
+            self.main_loop
+                .loop_()
+                .iterate(pipewire::loop_::Timeout::Finite(
+                    std::time::Duration::from_millis(10),
+                ));
+        }
+    }
+
+    /// Whether the equalizer node is running.
+    ///
+    /// A node that is suspended cannot carry audio, so the equalizer must
+    /// not be put in the path of the session while it is like that.
+    pub fn is_running(&self) -> bool {
+        matches!(
+            *self.state.borrow(),
+            NodeState::Running | NodeState::Idle
+        )
     }
 
     /// The id of the equalizer node, once it has been found.

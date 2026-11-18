@@ -10,11 +10,17 @@
 //! * `default.configured.audio.sink` is the one the user chose, and it is
 //!   the one to restore when the equalizer is switched off.
 //!
-//! The metadata is read and written with `pw-metadata`, which talks to the
-//! daemon over the same socket any client uses.
+//! The metadata is read and written through the PipeWire API, so the daemon
+//! does not depend on `pw-metadata` (which keeps monitoring after it sets a
+//! property, and would hang the process).
 
-use std::io::{BufRead, BufReader};
-use std::process::{Command, Stdio};
+use pipewire::core::CoreRc;
+use pipewire::metadata::Metadata;
+use pipewire::registry::GlobalObject;
+use pipewire::types::ObjectType;
+
+use std::cell::RefCell;
+use std::rc::Rc;
 
 /// The metadata key of the sink that is playing.
 pub const DEFAULT_SINK: &str = "default.audio.sink";
@@ -44,89 +50,111 @@ impl Defaults {
 }
 
 /// Read the default sinks from the metadata of the daemon.
-///
-/// `pw-metadata` keeps monitoring after it prints, so it is read line by
-/// line and stopped as soon as the defaults have been seen.
-pub fn read() -> Defaults {
+pub fn read(engine: &crate::engine::EqEngine) -> Defaults {
+    let core = engine.core();
     let mut defaults = Defaults::default();
 
-    let Ok(mut child) = Command::new("pw-metadata")
-        .arg("-n")
-        .arg("default")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-    else {
+    let Some(metadata) = bind_default_metadata(engine, core) else {
         return defaults;
     };
 
-    let Some(stdout) = child.stdout.take() else {
-        let _ = child.kill();
-        return defaults;
-    };
+    // The metadata delivers its properties through events, so the current
+    // values arrive when the loop runs.
+    let found: Rc<RefCell<Defaults>> = Rc::new(RefCell::new(Defaults::default()));
+    let captured = found.clone();
+    let watcher = found.clone();
 
-    let reader = BufReader::new(stdout);
-    for line in reader.lines().map_while(Result::ok) {
-        // update: id:0 key:'default.audio.sink' value:'{"name":"alsa_output..."}' type:'Spa:String:JSON'
-        let Some(key) = between(&line, "key:'", "'") else {
-            continue;
-        };
-        if key != DEFAULT_SINK && key != CONFIGURED_SINK {
-            continue;
-        }
-        let Some(value) = between(&line, "value:'", "'") else {
-            continue;
-        };
-        let Some(name) = parse_name(&value) else {
-            continue;
-        };
+    let _listener = metadata
+        .add_listener_local()
+        .property(move |_subject, key, _type, value| {
+            let Some(key) = key else { return 0 };
+            let Some(value) = value else { return 0 };
+            let Some(name) = parse_name(value) else {
+                return 0;
+            };
+            let mut found = captured.borrow_mut();
+            match key {
+                DEFAULT_SINK => found.current = Some(name),
+                CONFIGURED_SINK => found.configured = Some(name),
+                _ => {}
+            }
+            0
+        })
+        .register();
 
-        match key.as_str() {
-            DEFAULT_SINK => defaults.current = Some(name),
-            CONFIGURED_SINK => defaults.configured = Some(name),
-            _ => {}
-        }
-
-        if defaults.current.is_some() && defaults.configured.is_some() {
-            break;
-        }
+    // Run the loop until both defaults have been seen.
+    {
+        let watcher = watcher.clone();
+        engine.wait_for(move || {
+            let found = watcher.borrow();
+            found.current.is_some() && found.configured.is_some()
+        });
     }
 
-    let _ = child.kill();
-    let _ = child.wait();
-
+    defaults = found.borrow().clone();
     defaults
 }
 
 /// Set the sink the user chose, which is the default that plays.
-pub fn set_configured(name: &str) -> bool {
+pub fn set_configured(engine: &crate::engine::EqEngine, name: &str) -> bool {
+    let core = engine.core();
+    let Some(metadata) = bind_default_metadata(engine, core) else {
+        eprintln!("pweq-daemon: the default metadata was not found");
+        return false;
+    };
+
     let value = format!("{{\"name\":\"{name}\"}}");
-    Command::new("pw-metadata")
-        .args([
-            "0",
-            CONFIGURED_SINK,
-            &value,
-        ])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
+    metadata.set_property(0, CONFIGURED_SINK, Some("Spa:String:JSON"), Some(&value));
+    true
 }
 
 /// Restore the sink the user chose.
-pub fn restore(defaults: &Defaults) {
+pub fn restore(engine: &crate::engine::EqEngine, defaults: &Defaults) {
     if let Some(name) = defaults.real_output() {
-        set_configured(&name);
+        set_configured(engine, &name);
     }
 }
 
-/// Extract the text between two markers.
-fn between(text: &str, start: &str, end: &str) -> Option<String> {
-    let from = text.find(start)? + start.len();
-    let rest = &text[from..];
-    let to = rest.find(end)?;
-    Some(rest[..to].to_string())
+/// Bind the "default" metadata of the daemon.
+fn bind_default_metadata(
+    engine: &crate::engine::EqEngine,
+    core: &CoreRc,
+) -> Option<Metadata> {
+    let registry = core.get_registry_rc().ok()?;
+    let registry = Rc::new(registry);
+
+    // The metadata is a global of the daemon, so it is found through the
+    // registry.
+    let global: Rc<RefCell<Option<GlobalObject<pipewire::properties::PropertiesBox>>>> =
+        Rc::new(RefCell::new(None));
+    {
+        let captured = global.clone();
+        let _listener = registry
+            .add_listener_local()
+            .global(move |object| {
+                if object.type_ != ObjectType::Metadata {
+                    return;
+                }
+                let Some(props) = object.props else {
+                    return;
+                };
+                if props.get("metadata.name") == Some("default") {
+                    *captured.borrow_mut() = Some(object.to_owned());
+                }
+            })
+            .register();
+
+        // The registry delivers the globals that already exist when the
+        // main loop runs.
+        engine.wait_for(|| global.borrow().is_some());
+    }
+
+    let taken = global.borrow_mut().take();
+    let Some(global) = taken else {
+        return None;
+    };
+
+    registry.bind::<Metadata, _>(&global).ok()
 }
 
 /// Extract the "name" field of a JSON object.
@@ -154,10 +182,17 @@ mod tests {
     }
 
     #[test]
-    fn extracts_the_text_between_markers() {
-        assert_eq!(
-            between("key:'default.audio.sink' value:'x'", "key:'", "'"),
-            Some("default.audio.sink".to_string())
-        );
+    fn the_equalizer_is_not_a_real_output() {
+        let defaults = Defaults {
+            current: Some(EQ_SINK.to_string()),
+            configured: Some(EQ_SINK.to_string()),
+        };
+        assert_eq!(defaults.real_output(), None);
+
+        let defaults = Defaults {
+            current: Some(EQ_SINK.to_string()),
+            configured: Some("alsa_output.foo".to_string()),
+        };
+        assert_eq!(defaults.real_output(), Some("alsa_output.foo".to_string()));
     }
 }

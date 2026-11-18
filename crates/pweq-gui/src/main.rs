@@ -24,6 +24,8 @@ const APP_ID: &str = "io.github.gsusrafael.PipewireEqualizer";
 struct Sliders {
     bands: Vec<gtk4::Scale>,
     preamp: gtk4::Scale,
+    toggle: gtk4::Switch,
+    status: gtk4::Label,
 }
 
 fn main() -> glib::ExitCode {
@@ -142,12 +144,21 @@ fn build_window(app: &gtk4::Application) {
     footer.set_margin_end(12);
     footer.set_margin_bottom(12);
 
+    let toggle = gtk4::Switch::new();
+    toggle.set_active(true);
+    toggle.set_valign(gtk4::Align::Center);
+
+    let toggle_label = gtk4::Label::new(Some("Enabled"));
+    toggle_label.set_valign(gtk4::Align::Center);
+
     let reset = gtk4::Button::with_label("Reset");
     let status = gtk4::Label::new(Some(""));
     status.set_hexpand(true);
     status.set_halign(gtk4::Align::Start);
     status.add_css_class("dim-label");
 
+    footer.append(&toggle);
+    footer.append(&toggle_label);
     footer.append(&reset);
     footer.append(&status);
 
@@ -252,6 +263,31 @@ fn build_window(app: &gtk4::Application) {
         });
     }
 
+    // The on and off switch.
+    {
+        let client = client.clone();
+        let sliders = sliders.clone();
+        let updating = updating.clone();
+        let show_error = show_error.clone();
+
+        toggle.connect_state_set(move |toggle, _state| {
+            if *updating.borrow() {
+                return glib::Propagation::Proceed;
+            }
+            let request = Request::SetEnabled {
+                enabled: toggle.is_active(),
+            };
+            match client.state(&request) {
+                Ok(state) => {
+                    show_error(&state.error);
+                    apply_state(&state, &sliders, &updating);
+                }
+                Err(e) => show_error(&e.to_string()),
+            }
+            glib::Propagation::Proceed
+        });
+    }
+
     // The reset button.
     {
         let client = client.clone();
@@ -288,7 +324,12 @@ fn build_window(app: &gtk4::Application) {
         });
     }
 
-    *sliders.borrow_mut() = Some(Sliders { bands, preamp });
+    *sliders.borrow_mut() = Some(Sliders {
+        bands,
+        preamp,
+        toggle,
+        status,
+    });
 
     // First contact with the daemon.
     {
@@ -313,6 +354,29 @@ fn build_window(app: &gtk4::Application) {
     }
 
     window.present();
+}
+
+/// The line at the bottom of the window.
+fn status_text(state: &pweq_core::protocol::State) -> String {
+    let mut text = String::new();
+
+    if !state.output.is_empty() {
+        text.push_str(&format!("Output: {}", state.output));
+    }
+    if !state.preset.is_empty() {
+        if !text.is_empty() {
+            text.push_str("  ·  ");
+        }
+        text.push_str(&format!("Preset: {}", state.preset));
+    }
+    if !state.error.is_empty() {
+        if !text.is_empty() {
+            text.push_str("  ·  ");
+        }
+        text.push_str(&state.error);
+    }
+
+    text
 }
 
 /// Fill the preset combo box with the names the daemon reports.
@@ -344,5 +408,7 @@ fn apply_state(
             scale.set_value(f64::from(*gain));
         }
     }
+    sliders.toggle.set_active(state.enabled);
+    sliders.status.set_text(&status_text(state));
     *updating.borrow_mut() = false;
 }

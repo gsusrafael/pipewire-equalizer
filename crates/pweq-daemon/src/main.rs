@@ -73,7 +73,7 @@ impl Session {
         Self {
             state: EqState::flat(),
             preset: String::new(),
-            enabled: true,
+            enabled: false,
             error: String::new(),
             output: String::new(),
         }
@@ -132,10 +132,17 @@ fn main() {
         }
     };
 
+    // The default sinks of the session, read before the equalizer takes
+    // over as the default sink.
+    let defaults = defaults::read(&engine);
+
     // The equalizer plays into the output the user is listening to. When the
     // environment says otherwise, that one is used instead.
-    let defaults = defaults::read();
-    let target = std::env::var("PWEQ_TARGET").ok().or_else(|| defaults.real_output());
+    let target = std::env::var("PWEQ_TARGET")
+        .ok()
+        .or_else(|| defaults.real_output());
+    session.output = target.clone().unwrap_or_default();
+    eprintln!("pweq-daemon: playing into {}", session.output);
 
     let graph = FilterGraph::build(&session.state);
     if let Err(e) = engine.create_node(&graph, target.as_deref()) {
@@ -169,10 +176,14 @@ fn main() {
         defaults: defaults.clone(),
     }));
 
-    // The equalizer becomes the default sink, so the audio goes through it.
-    // The sink the user had chosen is kept, to be restored when the
-    // equalizer is switched off.
-    defaults::set_configured(defaults::EQ_SINK);
+    // The equalizer does NOT take over the default sink on its own: the
+    // sink the user chose stays the default until the equalizer is
+    // explicitly switched on from the interface. Moving it silently would
+    // break the audio of the session when the filter cannot start, which
+    // happens on a session whose audio device has no driver yet.
+    //
+    // The equalizer still shows up in the sound menu, so it can also be
+    // picked by hand.
 
     // The socket is polled from a timer in the PipeWire loop.
     let timer_context = context.clone();
@@ -273,14 +284,41 @@ fn handle_requests(requests: &[Request], context: &mut Context) -> Response {
                 }
             }
             Request::SetEnabled { enabled } => {
-                context.session.enabled = *enabled;
-                context.session.error.clear();
                 if *enabled {
-                    // The audio goes through the equalizer.
-                    defaults::set_configured(defaults::EQ_SINK);
+                    // The audio goes through the equalizer, but only when
+                    // the filter is really running: moving the default to a
+                    // sink that cannot start would leave the session
+                    // without sound.
+                    if !context.engine.is_running() {
+                        context.session.enabled = false;
+                        context.session.error =
+                            "the equalizer is not running yet, so it was not enabled".into();
+                        response = Response::Ok {
+                            state: context.session.report(presets.clone()),
+                        };
+                        continue;
+                    }
+
+                    // The sink the user had chosen is kept, to be restored
+                    // when the equalizer is switched off.
+                    if let Some(current) = context.defaults.configured.clone() {
+                        if current != defaults::EQ_SINK {
+                            context.defaults.configured = Some(current);
+                        }
+                    }
+                    if defaults::set_configured(&context.engine, defaults::EQ_SINK) {
+                        context.session.enabled = true;
+                        context.session.error.clear();
+                    } else {
+                        context.session.enabled = false;
+                        context.session.error =
+                            "the default sink could not be changed".into();
+                    }
                 } else {
                     // Back to the output the user had chosen.
-                    defaults::restore(&context.defaults);
+                    defaults::restore(&context.engine, &context.defaults);
+                    context.session.enabled = false;
+                    context.session.error.clear();
                 }
             }
         }

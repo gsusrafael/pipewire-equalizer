@@ -85,6 +85,17 @@ to route the audio through it, and select the device itself to bypass it.
 The node plays into the output that was the default when the daemon
 started. Set `PWEQ_TARGET` to a sink name to pin it to another one.
 
+### It does not take over the sound by itself
+
+The equalizer starts **switched off**, and the sink the user had chosen
+stays the default. It only takes over when it is switched on from the
+interface, and it gives the sink back when it is switched off.
+
+This matters: moving the default to a filter that cannot start would leave
+the session without sound, which happens when the audio device has no
+driver yet. The equalizer refuses to switch on in that case and says so
+in the status line.
+
 ### From the command line
 
 The daemon speaks JSON over a Unix socket, one request per line:
