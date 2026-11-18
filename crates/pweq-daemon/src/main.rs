@@ -75,13 +75,14 @@ impl Session {
         }
     }
 
-    fn report(&self) -> State {
+    fn report(&self, presets: Vec<String>) -> State {
         State {
             enabled: self.enabled,
             preset: self.preset.clone(),
             preamp_db: self.state.preamp_db,
             gains_db: self.state.gains_db.to_vec(),
             output: String::new(),
+            presets,
             error: self.error.clone(),
         }
     }
@@ -199,8 +200,9 @@ fn main() {
 
 /// Apply a batch of requests and build the answer.
 fn handle_requests(requests: &[Request], context: &mut Context) -> Response {
+    let presets: Vec<String> = context.store.load_all().into_iter().map(|p| p.name).collect();
     let mut response = Response::Ok {
-        state: context.session.report(),
+        state: context.session.report(presets.clone()),
     };
 
     for request in requests {
@@ -259,7 +261,7 @@ fn handle_requests(requests: &[Request], context: &mut Context) -> Response {
         }
 
         response = Response::Ok {
-            state: context.session.report(),
+            state: context.session.report(presets.clone()),
         };
     }
 

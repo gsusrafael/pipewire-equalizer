@@ -9,3 +9,10 @@ description = "PipeWire equalizer graphical interface"
 
 [dependencies]
 pweq-core = { workspace = true }
+gtk4 = { version = "0.10", features = ["v4_14"] }
+libadwaita = { version = "0.8", features = ["v1_5"] }
+glib = "0.21"
+gio = "0.21"
+
+[build-dependencies]
+pkg-config = "0.3"

@@ -53,6 +53,8 @@ pub struct State {
     pub gains_db: Vec<f32>,
     /// The output the equalizer is currently applied to.
     pub output: String,
+    /// The names of the available presets.
+    pub presets: Vec<String>,
     /// A human readable description of the last error, empty when fine.
     pub error: String,
 }
