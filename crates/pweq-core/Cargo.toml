@@ -1,0 +1,12 @@
+[package]
+name = "pweq-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Shared model for pipewire-equalizer: presets, bands and filter graph"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }

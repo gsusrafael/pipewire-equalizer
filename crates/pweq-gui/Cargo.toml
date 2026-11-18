@@ -1,0 +1,11 @@
+[package]
+name = "pweq-gui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "PipeWire equalizer graphical interface"
+
+[dependencies]
+pweq-core = { workspace = true }
