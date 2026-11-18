@@ -82,6 +82,9 @@ the music plays; there is no restart and no gap.
 The equalizer appears in the sound menu as **PipeWire Equalizer**. Select it
 to route the audio through it, and select the device itself to bypass it.
 
+The node plays into the output that was the default when the daemon
+started. Set `PWEQ_TARGET` to a sink name to pin it to another one.
+
 ### From the command line
 
 The daemon speaks JSON over a Unix socket, one request per line:
@@ -163,6 +166,26 @@ change what the sliders do:
   half the gain the label says: 6 dB of shelf comes out as about 3 dB.
 
 Both are in PipeWire's `filter-chain` module, not in this project.
+
+## What was verified, and what was not
+
+Verified on PipeWire 1.0.5 and WirePlumber 1.0.5:
+
+* the daemon creates the equalizer node in the running PipeWire daemon, and
+  the node shows up in the graph like any other sink;
+* moving a band in the interface changes the gain of the live node without
+  recreating the filter (`band_peaking3:Gain` went from 0 to -6 dB while the
+  node kept running);
+* loading a preset moves all fifteen gains of the node at once;
+* the filter graph is built from native PipeWire biquads, so no LADSPA plugin
+  and no extra process sit in the audio path.
+
+Not verified: the audio actually coming out of the speakers with the filter
+applied. In the session where this was developed the audio device never
+started a driver, so every stream stayed suspended, including a plain
+`pw-play` straight to the ALSA device. The routing was therefore verified at
+the graph level (the node is created, the control ports are addressed and
+changed) and not by listening.
 
 ## Layout
 
