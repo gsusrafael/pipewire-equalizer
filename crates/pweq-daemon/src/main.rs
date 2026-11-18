@@ -13,6 +13,7 @@
 //! Everything runs in the PipeWire main loop, so a request is applied to the
 //! live node in the very thread that owns it.
 
+mod defaults;
 mod engine;
 mod server;
 
@@ -63,6 +64,8 @@ struct Session {
     enabled: bool,
     /// The last error, empty when everything is fine.
     error: String,
+    /// The sink the audio really goes to.
+    output: String,
 }
 
 impl Session {
@@ -72,6 +75,7 @@ impl Session {
             preset: String::new(),
             enabled: true,
             error: String::new(),
+            output: String::new(),
         }
     }
 
@@ -81,7 +85,7 @@ impl Session {
             preset: self.preset.clone(),
             preamp_db: self.state.preamp_db,
             gains_db: self.state.gains_db.to_vec(),
-            output: String::new(),
+            output: self.output.clone(),
             presets,
             error: self.error.clone(),
         }
@@ -94,6 +98,9 @@ struct Context {
     session: Session,
     engine: EqEngine,
     store: PresetStore,
+    /// The default sinks of the session, as they were before the equalizer
+    /// took over.
+    defaults: defaults::Defaults,
 }
 
 fn main() {
@@ -125,9 +132,10 @@ fn main() {
         }
     };
 
-    // The equalizer plays into the current default output, unless the
-    // environment says otherwise.
-    let target = std::env::var("PWEQ_TARGET").ok();
+    // The equalizer plays into the output the user is listening to. When the
+    // environment says otherwise, that one is used instead.
+    let defaults = defaults::read();
+    let target = std::env::var("PWEQ_TARGET").ok().or_else(|| defaults.real_output());
 
     let graph = FilterGraph::build(&session.state);
     if let Err(e) = engine.create_node(&graph, target.as_deref()) {
@@ -158,7 +166,13 @@ fn main() {
         session,
         engine,
         store,
+        defaults: defaults.clone(),
     }));
+
+    // The equalizer becomes the default sink, so the audio goes through it.
+    // The sink the user had chosen is kept, to be restored when the
+    // equalizer is switched off.
+    defaults::set_configured(defaults::EQ_SINK);
 
     // The socket is polled from a timer in the PipeWire loop.
     let timer_context = context.clone();
@@ -261,6 +275,13 @@ fn handle_requests(requests: &[Request], context: &mut Context) -> Response {
             Request::SetEnabled { enabled } => {
                 context.session.enabled = *enabled;
                 context.session.error.clear();
+                if *enabled {
+                    // The audio goes through the equalizer.
+                    defaults::set_configured(defaults::EQ_SINK);
+                } else {
+                    // Back to the output the user had chosen.
+                    defaults::restore(&context.defaults);
+                }
             }
         }
 

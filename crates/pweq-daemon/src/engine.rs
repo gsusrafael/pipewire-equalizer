@@ -127,9 +127,14 @@ impl EqEngine {
         graph: &FilterGraph,
         target: Option<&str>,
     ) -> Result<(), EqError> {
-        // The playback side plays into the real output. Without a target it
-        // would follow whatever WirePlumber considers the default, which can
-        // be this very sink, so the target is always given.
+        // The playback side carries the filtered audio to the real output.
+        //
+        // It is marked as a DSP stream, the same way EasyEffects marks its
+        // own output, so that the session manager links it to the output
+        // that is playing, instead of treating it as another stream to mix.
+        //
+        // When a target is given, it is pinned to that output; otherwise it
+        // follows the default one.
         let target_props = match target {
             Some(name) => format!("target.object = \"{name}\" "),
             None => String::new(),
@@ -141,8 +146,8 @@ impl EqEngine {
              {} \
              audio.channels = 2 \
              audio.position = [ FL FR ] \
-             capture.props = {{ node.name = \"{EQ_SINK_NAME}\" media.class = Audio/Sink priority.session = 0 }} \
-             playback.props = {{ node.name = \"{EQ_OUTPUT_NAME}\" node.passive = true node.dont-move = true {target_props} }}",
+             capture.props = {{ node.name = \"{EQ_SINK_NAME}\" media.class = Audio/Sink media.role = Filter priority.session = 0 }} \
+             playback.props = {{ node.name = \"{EQ_OUTPUT_NAME}\" media.class = Stream/Output/Audio media.role = DSP node.passive = true node.dont-move = true {target_props} }}",
             graph.to_spa_json()
         );
 
